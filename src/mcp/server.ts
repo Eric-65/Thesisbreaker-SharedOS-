@@ -46,7 +46,17 @@ function callerFrom(clientName: string | undefined) {
   };
 }
 
-export function createServer(): Server {
+export interface CreateServerOptions {
+  /**
+   * Caller identity for the SharedOS actor. Supplied by the HTTP transport
+   * from an authenticated header; over stdio the session names itself at
+   * initialize time and this is left unset.
+   */
+  callerAgentId?: string;
+  callerName?: string;
+}
+
+export function createServer(options: CreateServerOptions = {}): Server {
   const server = new Server(
     { name: "thesisbreaker", version: "2.0.0" },
     { capabilities: { tools: {} } },
@@ -82,7 +92,12 @@ export function createServer(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = request.params.name;
-    const caller = callerFrom(server.getClientVersion()?.name);
+    const caller = options.callerAgentId
+      ? {
+          agentId: options.callerAgentId,
+          ...(options.callerName ? { name: options.callerName } : {}),
+        }
+      : callerFrom(server.getClientVersion()?.name);
 
     if (toolName === CATALOG_TOOL) {
       return {
