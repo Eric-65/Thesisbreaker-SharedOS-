@@ -29,6 +29,14 @@ cp .env.example .env.local
 #    Join the Room with the one-time claim from its invite page. This must run
 #    on the machine that will host the agent: the claim is spent by the first
 #    join and leaves the key in a file there.
+#
+#    WINDOWS: run this from WSL (Ubuntu), NOT from PowerShell or Command
+#    Prompt. sharednet 0.1.8 refuses to store credentials on native Windows
+#    (storage.js: ensureSecureDirectory throws on win32), and it makes that
+#    check AFTER redeeming the claim with the server - so a native-Windows join
+#    spends the claim and then loses the key. Install WSL once with
+#    `wsl --install -d Ubuntu`, then do everything below inside it.
+#    The CLI also wants Node >= 22.18.
 npx -y sharednet@latest join 'ROOM=<rom_…> TOKEN=<rit_…> BASE=https://www.sharednet.ai' \
   --claim <clp_…>
 
