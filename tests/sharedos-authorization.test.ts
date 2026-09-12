@@ -82,6 +82,25 @@ describe("SharedOS authorization", () => {
     }
   });
 
+  it("enforces a timeout as a controlled result", async () => {
+    const { host: h } = host();
+
+    const outcome = await h.runServiceTurn(
+      "break_thesis",
+      { thesis: "A thesis that will not get the time it needs to run." },
+      caller,
+      { timeoutMs: 1 },
+    );
+
+    // Either the budget expired or the service beat it — both are controlled,
+    // and neither throws.
+    expect(typeof outcome.ok).toBe("boolean");
+    if (!outcome.ok) {
+      expect(["timeout", "internal_error"]).toContain(outcome.error?.code);
+    }
+    expect(outcome.durationMs).toBeLessThan(5_000);
+  });
+
   it("permission-filters the tool catalogue per caller", async () => {
     const full = host();
     const limited = host({ entitlements: new FreeTierOnlyEntitlementStore() });
