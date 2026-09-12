@@ -246,7 +246,7 @@ See [`.env.example`](.env.example) for the annotated list. Required to *trade*
 in the Arena (not to execute): `SHAREDOS_TENANT_ID`, `SHAREDOS_OWNER_ADDRESS`,
 `SHAREDOS_AGENT_ADDRESS`, `SHAREDNET_NODE_ID`, `SHAREDNET_ROOM_ID`.
 
-`DATABASE_URL` and all Binance variables are optional.
+`DATABASE_URL` is optional — the Arena services never need one.
 
 ---
 
@@ -325,17 +325,7 @@ call produces an `authorization.checked` with outcome `denied`.
 
 ---
 
-## 12. Trading / Binance (optional, legacy)
-
-The Binance Agent OS integration came from an earlier hackathon. It is **not
-required** for any Arena service: the paid services run with no
-`BINANCE_AGENT_TOKEN`. It remains available as an optional trading-specific
-domain, isolated in `src/lib/binance/` and the trading screens. General decision
-verification is the core product; trading analysis is one domain of it.
-
----
-
-## 13. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|

@@ -246,12 +246,3 @@ The other agent sends credits; ThesisBreaker acknowledges and links the payment
 to the request. The agent is still online, still answering.
 
 **2:00 — Close.** "Break a decision before an agent acts on it."
-
----
-
-## What is NOT the story
-
-The repository contains a Binance Agent OS trading integration from an earlier
-hackathon. It is **not required** for any Arena service — the paid services run
-with no `BINANCE_AGENT_TOKEN`. It is retained as an optional trading-specific
-domain. The product is general decision verification; trading is one use case.
