@@ -105,3 +105,53 @@ export const serviceCalls = pgTable("service_calls", {
 
 export type ServiceCall = typeof serviceCalls.$inferSelect;
 export type NewServiceCall = typeof serviceCalls.$inferInsert;
+
+/**
+ * Audit events emitted by the SharedOS kernel itself. Rows here are written
+ * verbatim from `AuditEvent` objects the kernel produced — nothing in this
+ * table is synthesized by ThesisBreaker.
+ */
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull(),
+  type: text("type").notNull(),
+  outcome: text("outcome").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  traceId: text("trace_id").notNull(),
+  namespaceId: text("namespace_id").notNull(),
+  purpose: text("purpose").notNull(),
+  actor: jsonb("actor").notNull(),
+  authority: jsonb("authority").notNull(),
+  owner: jsonb("owner").notNull(),
+  resource: jsonb("resource"),
+  action: text("action"),
+  tool: text("tool"),
+  grantId: text("grant_id"),
+  reason: text("reason"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AuditEventRow = typeof auditEvents.$inferSelect;
+
+/**
+ * Arena credit movements this product observed. ThesisBreaker does NOT settle
+ * payments — SharedNet does. These rows record what another agent told us, and
+ * what the SharedNet ledger confirmed, so a transaction can be reconciled.
+ */
+export const creditTransactions = pgTable("credit_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  direction: text("direction").notNull(), // 'INBOUND' | 'OUTBOUND'
+  counterpartyId: text("counterparty_id"),
+  counterpartyName: text("counterparty_name"),
+  amount: integer("amount").notNull(),
+  service: text("service"),
+  requestId: text("request_id"),
+  memo: text("memo"),
+  status: text("status").notNull().default("CLAIMED"), // CLAIMED | CONFIRMED | DISPUTED
+  sharednetTxnId: text("sharednet_txn_id"),
+  raw: jsonb("raw"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type CreditTransaction = typeof creditTransactions.$inferSelect;

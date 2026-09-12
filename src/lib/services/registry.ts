@@ -1,287 +1,125 @@
 /**
- * Service registry — the machine-readable catalog ThesisBreaker publishes to
- * SharedNet. Each entry is fully serializable and includes an input/output
- * JSON schema so a discovering agent can call the service without human help.
+ * SharedNet service discovery.
  *
- * The `purpose` string is applied consistently across service execution and
- * audit logging.
+ * The manifest is written so another agent can answer, in one fetch and without
+ * reading the README:
+ *   WHAT IS THIS?  WHAT DOES IT COST?  WHEN SHOULD I USE IT?
+ *   WHAT DO I SEND?  WHAT DO I GET?
  */
 
-export const PURPOSE = "thesisbreaker.verify";
+import { CURRENCY, IDENTITY, NAMESPACE, PRICES, PURPOSE, type ServiceName } from "../arena/config";
+import { DENIED_CAPABILITIES } from "../sharedos/capabilities";
+import { SERVICE_LIST, SERVICE_SCHEMAS, type ServiceSchema } from "./schemas";
 
-export type ServiceName = "break_thesis" | "verify_claim";
+export { PURPOSE, type ServiceName };
+export { SERVICE_SCHEMAS, SERVICE_LIST };
 
-export interface ServiceSpec {
-  name: ServiceName;
-  version: string;
-  description: string;
-  priceCredits: number;
-  expectedLatencyMs: number;
-  timeoutMs: number;
-  purpose: string;
-  permissions: {
-    allowed: string[];
-    denied: string[];
-  };
-  request: unknown; // JSON schema
-  response: unknown; // JSON schema
-  invocation: {
-    method: "POST";
-    path: string;
-    contentType: "application/json";
-  };
+export function getService(name: string): ServiceSchema | undefined {
+  return SERVICE_LIST.find((s) => s.name === name);
 }
 
-const BREAK_THESIS_REQUEST_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "BreakThesisRequest",
-  type: "object",
-  required: ["thesis"],
-  additionalProperties: false,
-  properties: {
-    thesis: {
-      type: "string",
-      minLength: 5,
-      maxLength: 4000,
-      description: "The decision or thesis statement to stress-test.",
-    },
-    context: {
-      type: "string",
-      maxLength: 4000,
-      description: "Optional surrounding context, objective, or prior turn output.",
-    },
-    evidence: {
-      type: "array",
-      items: { type: "string", maxLength: 2000 },
-      maxItems: 32,
-      description:
-        "Optional pre-collected evidence strings. Stored verbatim as FACT-labelled evidence — the service never verifies or fabricates these.",
-    },
-    sources: {
-      type: "array",
-      items: { type: "string", maxLength: 500 },
-      maxItems: 32,
-      description: "Optional matching source labels (URLs, doc ids). Never fabricated by the service.",
-    },
-    domain: {
-      type: "string",
-      enum: [
-        "trading",
-        "business",
-        "technical",
-        "research",
-        "strategic",
-        "factual",
-        "product",
-        "general",
-      ],
-      description: "Optional domain hint. Defaults to 'general'.",
-    },
-    constraints: {
-      type: "array",
-      items: { type: "string", maxLength: 500 },
-      maxItems: 16,
-    },
-    objective: { type: "string", maxLength: 500 },
-  },
-} as const;
-
-const BREAK_THESIS_RESPONSE_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "BreakThesisResponse",
-  type: "object",
-  required: [
-    "service",
-    "verdict",
-    "score",
-    "confidence",
-    "supporting_evidence",
-    "contradicting_evidence",
-    "critical_assumptions",
-    "risks",
-    "invalidation_conditions",
-    "missing_evidence",
-    "recommendation",
-    "summary",
-    "score_breakdown",
-    "latency_ms",
-    "demo",
-  ],
-  properties: {
-    service: { const: "break_thesis" },
-    verdict: { enum: ["SUPPORTED", "WEAK", "CONTRADICTED", "UNCERTAIN"] },
-    score: { type: "integer", minimum: 0, maximum: 100 },
-    confidence: { type: "integer", minimum: 0, maximum: 100 },
-    supporting_evidence: { type: "array" },
-    contradicting_evidence: { type: "array" },
-    uncertain_evidence: { type: "array" },
-    critical_assumptions: { type: "array" },
-    risks: { type: "array" },
-    invalidation_conditions: { type: "array", items: { type: "string" } },
-    missing_evidence: { type: "array", items: { type: "string" } },
-    recommendation: { type: "string" },
-    summary: { type: "string" },
-    score_breakdown: { type: "object" },
-    bull_case: { type: "array", items: { type: "string" } },
-    bear_case: { type: "array", items: { type: "string" } },
-    contrarian_case: { type: "array", items: { type: "string" } },
-    strongest_contradiction: { type: "string" },
-    weakest_assumption: { type: "string" },
-    largest_risk: { type: "string" },
-    strongest_support: { type: "string" },
-    domain: { type: "string" },
-    latency_ms: { type: "integer", minimum: 0 },
-    demo: { type: "boolean" },
-  },
-} as const;
-
-const VERIFY_CLAIM_REQUEST_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "VerifyClaimRequest",
-  type: "object",
-  required: ["claim"],
-  additionalProperties: false,
-  properties: {
-    claim: {
-      type: "string",
-      minLength: 3,
-      maxLength: 2000,
-      description: "The claim to verify.",
-    },
-    context: { type: "string", maxLength: 2000 },
-    sources: {
-      type: "array",
-      items: { type: "string", maxLength: 500 },
-      maxItems: 16,
-    },
-    evidence: {
-      type: "array",
-      items: { type: "string", maxLength: 2000 },
-      maxItems: 16,
-    },
-  },
-} as const;
-
-const VERIFY_CLAIM_RESPONSE_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "VerifyClaimResponse",
-  type: "object",
-  required: [
-    "service",
-    "verdict",
-    "confidence",
-    "evidence",
-    "contradictions",
-    "source_quality",
-    "recommendation",
-    "summary",
-    "latency_ms",
-    "demo",
-  ],
-  properties: {
-    service: { const: "verify_claim" },
-    verdict: { enum: ["SUPPORTED", "CONTRADICTED", "UNCERTAIN"] },
-    confidence: { type: "integer", minimum: 0, maximum: 100 },
-    evidence: { type: "array" },
-    contradictions: { type: "array" },
-    uncertain: { type: "array" },
-    source_quality: { enum: ["STRONG", "MIXED", "WEAK", "NONE"] },
-    recommendation: { type: "string" },
-    summary: { type: "string" },
-    latency_ms: { type: "integer", minimum: 0 },
-    demo: { type: "boolean" },
-  },
-} as const;
-
-const COMMON_PERMISSIONS = {
-  allowed: [
-    "read:submitted_decision",
-    "read:submitted_evidence",
-    "invoke:thesisbreaker.reasoning_pipeline",
-    "network:public_market_data (optional)",
-    "network:public_web_lookup (optional, disabled by default)",
-    "return:verification_result",
-  ],
-  denied: [
-    "fs:read",
-    "fs:write",
-    "network:arbitrary",
-    "wallet:*",
-    "email:*",
-    "process:spawn",
-    "system:shell",
-    "trade:execute",
-    "identity:pii",
-    "capabilities:not-listed",
-  ],
-} as const;
-
-export const SERVICES: ServiceSpec[] = [
-  {
-    name: "break_thesis",
-    version: "1.0.0",
-    description:
-      "Stress-test a thesis or decision by challenging its assumptions, examining evidence, finding contradictions, identifying risks and invalidation conditions, and returning a structured verdict.",
-    priceCredits: 10,
-    expectedLatencyMs: 800,
-    timeoutMs: 20_000,
-    purpose: PURPOSE,
-    permissions: { allowed: [...COMMON_PERMISSIONS.allowed], denied: [...COMMON_PERMISSIONS.denied] },
-    request: BREAK_THESIS_REQUEST_SCHEMA,
-    response: BREAK_THESIS_RESPONSE_SCHEMA,
-    invocation: {
-      method: "POST",
-      path: "/api/agent/services/break_thesis",
-      contentType: "application/json",
-    },
-  },
-  {
-    name: "verify_claim",
-    version: "1.0.0",
-    description:
-      "Quickly assess whether a claim is supported, contradicted or uncertain based on the supplied evidence and permitted research capabilities.",
-    priceCredits: 5,
-    expectedLatencyMs: 400,
-    timeoutMs: 10_000,
-    purpose: PURPOSE,
-    permissions: { allowed: [...COMMON_PERMISSIONS.allowed], denied: [...COMMON_PERMISSIONS.denied] },
-    request: VERIFY_CLAIM_REQUEST_SCHEMA,
-    response: VERIFY_CLAIM_RESPONSE_SCHEMA,
-    invocation: {
-      method: "POST",
-      path: "/api/agent/services/verify_claim",
-      contentType: "application/json",
-    },
-  },
-];
-
-export function getService(name: string): ServiceSpec | undefined {
-  return SERVICES.find((s) => s.name === name);
+export interface ManifestOptions {
+  publicBaseUrl?: string;
 }
 
-/** Serializable manifest suitable for SharedNet discovery. */
-export function manifest(publicBaseUrl?: string) {
+/** The machine-readable product manifest published for SharedNet discovery. */
+export function manifest(options: ManifestOptions = {}) {
+  const base = options.publicBaseUrl?.replace(/\/$/, "");
+
   return {
     product: "ThesisBreaker",
     tagline: "Break a decision before an agent acts on it.",
+    value_proposition:
+      "Before you act on a decision, ThesisBreaker tries to break it. It checks supporting " +
+      "evidence, contradictions, assumptions, risks and invalidation conditions, then returns " +
+      "a structured verdict you can act on.",
+    version: "2.0.0",
+    currency: CURRENCY,
     purpose: PURPOSE,
+    namespace: NAMESPACE,
     permissions_model: "deny-by-default",
-    services: SERVICES.map((s) => ({
+    execution: {
+      layer: "SharedOS",
+      package: "@aicoo/sharedos-core",
+      note: "Every paid service call is authorized and audited by the SharedOS kernel. There is no execution path that bypasses it.",
+    },
+    agent: {
+      product_agent_address: IDENTITY.productAgentAddress,
+      sharednet_node_id: IDENTITY.sharednetNodeId,
+      room_id: IDENTITY.sharednetRoomId,
+      registered: IDENTITY.productAgentAddress !== null && IDENTITY.sharednetNodeId !== null,
+    },
+    pricing: {
+      free_preview: PRICES.free_preview,
+      verify_claim: PRICES.verify_claim,
+      break_thesis: PRICES.break_thesis,
+    },
+    payment: {
+      model: "settle-after-delivery",
+      mechanism: "SharedNet Arena credits",
+      instruction:
+        "Call the service, receive the result, then transfer the listed credits with `sharednet pay <agent> <amount> --memo <request_id>`. Include the request_id so the transfer can be reconciled.",
+    },
+    denied_capabilities: DENIED_CAPABILITIES,
+    access: {
+      mcp: {
+        transport: "stdio",
+        command: "npx thesisbreaker-mcp",
+        tools: SERVICE_LIST.map((s) => `thesisbreaker.${s.name}`),
+      },
+      cli: {
+        command: "thesisbreaker",
+        examples: [
+          'thesisbreaker free-preview --thesis "..."',
+          'thesisbreaker verify-claim --claim "..." --evidence "..."',
+          'thesisbreaker break-thesis --thesis "..." --json',
+        ],
+      },
+      http: base
+        ? {
+            manifest: `${base}/api/agent/manifest`,
+            health: `${base}/api/arena/health`,
+            services: SERVICE_LIST.map((s) => `${base}/api/agent/services/${s.name}`),
+          }
+        : undefined,
+    },
+    services: SERVICE_LIST.map((s) => ({
       name: s.name,
       version: s.version,
-      description: s.description,
-      price_credits: s.priceCredits,
+      summary: s.summary,
+      description: s.agentDescription,
+      use_when: s.useWhen,
+      price: s.priceCredits,
+      currency: s.currency,
+      paid: s.priceCredits > 0,
       expected_latency_ms: s.expectedLatencyMs,
+      expected_latency: `${(s.expectedLatencyMs / 1000).toFixed(2)}s typical, <5 minutes guaranteed`,
       timeout_ms: s.timeoutMs,
-      purpose: s.purpose,
-      permissions: s.permissions,
-      request_schema: s.request,
-      response_schema: s.response,
-      endpoint: publicBaseUrl
-        ? `${publicBaseUrl.replace(/\/$/, "")}${s.invocation.path}`
-        : s.invocation.path,
-      method: s.invocation.method,
-      content_type: s.invocation.contentType,
+      purpose: PURPOSE,
+      input_schema: s.request,
+      output_schema: s.response,
+      example: s.example,
+      mcp_tool: `thesisbreaker.${s.name}`,
+      endpoint: base ? `${base}/api/agent/services/${s.name}` : `/api/agent/services/${s.name}`,
+      method: "POST",
+      content_type: "application/json",
     })),
+  };
+}
+
+/** A deliberately tiny summary — the cheapest possible way to evaluate us. */
+export function shortManifest() {
+  return {
+    product: "ThesisBreaker",
+    what: "Stress-tests a decision before an agent acts on it. Returns a structured verdict.",
+    services: SERVICE_LIST.map((s) => ({
+      name: s.name,
+      price: s.priceCredits,
+      currency: s.currency,
+      what: s.summary,
+      use_when: s.useWhen,
+    })),
+    call_via: "MCP (stdio) · CLI · HTTP POST",
+    purpose: PURPOSE,
   };
 }

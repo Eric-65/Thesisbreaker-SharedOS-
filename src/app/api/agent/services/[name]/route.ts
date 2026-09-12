@@ -1,87 +1,93 @@
 import { NextRequest } from "next/server";
-import { randomUUID } from "crypto";
-import { getService, PURPOSE } from "@/lib/services/registry";
-import {
-  BREAK_THESIS_REQUIRED_CAPABILITIES,
-  runBreakThesisService,
-  validateBreakThesisRequest,
-} from "@/lib/services/break_thesis";
-import {
-  VERIFY_CLAIM_REQUIRED_CAPABILITIES,
-  runVerifyClaimService,
-  validateVerifyClaimRequest,
-} from "@/lib/services/verify_claim";
+
+import { SERVICE_NAMES, type ServiceName } from "@/lib/arena/config";
+import { invokeService } from "@/lib/services/invoke";
+import { getService } from "@/lib/services/registry";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/agent/services/[name]
  *
- * Executes an Arena service as a SharedOS-style agent turn. Machine-facing;
- * accepts JSON, returns JSON. No browser session required.
+ * Machine-facing service endpoint. JSON in, JSON out, no browser session.
  *
- * Recognised headers:
- *   x-purpose               — required, must match the service purpose
- *   x-granted-capabilities  — comma-separated capability strings
- *   x-caller-agent-id       — optional caller identifier
- *   x-caller-name           — optional display name
- *   x-request-id            — optional idempotency key
- *
- * If any header is missing, sensible defaults let a human tester call the
- * endpoint with curl / Postman; production agent callers should always
- * include the purpose + grants.
+ * Authority is NOT accepted from the request. The caller identifies itself
+ * (`x-caller-agent-id`) and SharedOS decides what that caller may invoke by
+ * loading grants from the trusted grant source. A caller cannot widen its own
+ * permissions by sending a header.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
   const { name } = await ctx.params;
-  const spec = getService(name);
-  if (!spec) {
-    return Response.json({ ok: false, error: `unknown service: ${name}` }, { status: 404 });
+
+  if (!SERVICE_NAMES.includes(name as ServiceName) || !getService(name)) {
+    return Response.json(
+      {
+        success: false,
+        error: {
+          code: "unknown_service",
+          message: `unknown service: ${name}`,
+        },
+        available: SERVICE_NAMES,
+      },
+      { status: 404 },
+    );
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return Response.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { success: false, error: { code: "invalid_payload", message: "invalid JSON body" } },
+      { status: 400 },
+    );
   }
 
-  const requestId = req.headers.get("x-request-id") ?? `req_${randomUUID()}`;
-  const purpose = req.headers.get("x-purpose") ?? PURPOSE;
-  const grantedRaw = req.headers.get("x-granted-capabilities") ?? "";
-  const declaredGrants = grantedRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const grantedCapabilities =
-    declaredGrants.length > 0
-      ? declaredGrants
-      : // Sensible default for a human tester: grant EXACTLY the minimum
-        // required for the requested service. Never grant more.
-        (name === "break_thesis"
-          ? BREAK_THESIS_REQUIRED_CAPABILITIES
-          : VERIFY_CLAIM_REQUIRED_CAPABILITIES);
-  const callerAgentId = req.headers.get("x-caller-agent-id") ?? undefined;
-  const callerName = req.headers.get("x-caller-name") ?? undefined;
-  const grants = {
-    purpose,
-    service: spec.name,
-    grantedCapabilities,
-    callerAgentId,
-    callerName,
-    requestId,
-  } as const;
+  const envelope = await invokeService(name as ServiceName, body, {
+    caller: {
+      agentId: req.headers.get("x-caller-agent-id")?.trim() || "anonymous-http-caller",
+      ...(req.headers.get("x-caller-name")?.trim()
+        ? { name: req.headers.get("x-caller-name")!.trim() }
+        : {}),
+    },
+    ...(req.headers.get("x-request-id")?.trim()
+      ? { requestId: req.headers.get("x-request-id")!.trim() }
+      : {}),
+  });
 
-  if (name === "break_thesis") {
-    const v = validateBreakThesisRequest(body);
-    if (!v.ok) return Response.json({ ok: false, error: v.error }, { status: 400 });
-    const out = await runBreakThesisService(v.value, grants);
-    return Response.json(out, { status: out.ok ? 200 : out.denied ? 403 : 500 });
+  const status = envelope.success
+    ? 200
+    : envelope.error.code === "unauthorized"
+      ? 403
+      : envelope.error.code === "timeout"
+        ? 504
+        : envelope.error.code === "internal_error"
+          ? 500
+          : 400;
+
+  return Response.json(envelope, { status });
+}
+
+/** GET returns the service's contract, so an agent can discover it in one call. */
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
+  const { name } = await ctx.params;
+  const spec = getService(name);
+  if (!spec) {
+    return Response.json(
+      { success: false, error: { code: "unknown_service", message: `unknown service: ${name}` } },
+      { status: 404 },
+    );
   }
-  if (name === "verify_claim") {
-    const v = validateVerifyClaimRequest(body);
-    if (!v.ok) return Response.json({ ok: false, error: v.error }, { status: 400 });
-    const out = await runVerifyClaimService(v.value, grants);
-    return Response.json(out, { status: out.ok ? 200 : out.denied ? 403 : 500 });
-  }
-  return Response.json({ ok: false, error: `unhandled service: ${name}` }, { status: 404 });
+  return Response.json({
+    name: spec.name,
+    summary: spec.summary,
+    description: spec.agentDescription,
+    use_when: spec.useWhen,
+    price: spec.priceCredits,
+    currency: spec.currency,
+    input_schema: spec.request,
+    output_schema: spec.response,
+    example: spec.example,
+    expected_latency_ms: spec.expectedLatencyMs,
+  });
 }
