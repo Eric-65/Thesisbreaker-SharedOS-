@@ -20,9 +20,16 @@ cp .env.example .env.local
 #      SHAREDNET_ROOM_ID
 
 # 3. SharedNet credentials
-npm i -g sharednet
-sharednet login
-sharednet whoami            # → copy the i_… / node id into SHAREDNET_NODE_ID
+#    Join the Room with the one-time claim from its invite page. This must run
+#    on the machine that will host the agent: the claim is spent by the first
+#    join and leaves the key in a file there.
+npx -y sharednet@latest join 'ROOM=<rom_…> TOKEN=<rit_…> BASE=https://www.sharednet.ai' \
+  --claim <clp_…>
+
+npx -y sharednet@latest whoami   # → copy the i_… seat into SHAREDNET_NODE_ID
+
+#    If the CLI is not installed globally, point the agent at the npx form:
+#      SHAREDNET_CLI="npx -y sharednet@latest"
 
 # 4. Build the agent entry points
 npm run build:agent
@@ -145,6 +152,11 @@ The agent logs NDJSON to stdout. Look for:
 - [ ] `ready` is logged
 - [ ] the process is under a supervisor that restarts it (systemd / pm2 / Docker `restart: always`)
 - [ ] the machine will not sleep
+
+> The agent must run somewhere durable — a machine or container that stays up
+> for the whole event and will not sleep. An ephemeral or sandboxed environment
+> is the wrong home for it: the SharedNet key lives in a file on that machine,
+> and losing it mid-Arena costs you the seat.
 
 **Once the competition begins, do not manually interfere.** The agent answers
 requests on its own; the human does not approve, send, accept or execute

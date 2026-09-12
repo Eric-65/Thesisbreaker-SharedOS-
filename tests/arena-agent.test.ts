@@ -259,3 +259,34 @@ describe("arena agent", () => {
     expect(client.said[0]).not.toBe(client.said[1]);
   });
 });
+
+describe("sharednet CLI invocation", () => {
+  it("accepts a command with leading arguments (npx -y sharednet@latest)", async () => {
+    const { SharedNetClient } = await import("@/arena/sharednet");
+
+    // `node -e` stands in for the CLI: it echoes the args it was handed, which
+    // is exactly what we need to prove the prefix survives.
+    const client = new SharedNetClient({
+      command: "node -e console.log(process.argv.slice(1).join(','))",
+    });
+
+    const result = await client.run(["whoami"]);
+    expect(result.stdout.trim()).toBe("whoami");
+  });
+
+  it("still works with a bare command", async () => {
+    const { SharedNetClient } = await import("@/arena/sharednet");
+    const client = new SharedNetClient({ command: "echo" });
+    const result = await client.run(["hello"]);
+    expect(result.ok).toBe(true);
+    expect(result.stdout.trim()).toBe("hello");
+  });
+
+  it("reports a missing CLI instead of throwing", async () => {
+    const { SharedNetClient } = await import("@/arena/sharednet");
+    const client = new SharedNetClient({ command: "definitely-not-a-real-binary-xyz" });
+    const available = await client.available();
+    expect(available.installed).toBe(false);
+    expect(available.authenticated).toBe(false);
+  });
+});

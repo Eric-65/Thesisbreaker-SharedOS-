@@ -27,7 +27,11 @@ export interface SharedNetResult {
 }
 
 export interface SharedNetOptions {
-  /** Command used to invoke the CLI. Configurable for local checkouts. */
+  /**
+   * How to invoke the CLI. May include leading arguments, so the documented
+   * `npx -y sharednet@latest` form works as well as a globally installed
+   * `sharednet` binary or a local checkout.
+   */
   command?: string;
   timeoutMs?: number;
 }
@@ -36,10 +40,16 @@ const DEFAULT_COMMAND = process.env.SHAREDNET_CLI ?? "sharednet";
 
 export class SharedNetClient {
   readonly #command: string;
+  readonly #prefixArgs: readonly string[];
   readonly #defaultTimeout: number;
 
   constructor(options: SharedNetOptions = {}) {
-    this.#command = options.command ?? DEFAULT_COMMAND;
+    const [command, ...prefixArgs] = (options.command ?? DEFAULT_COMMAND)
+      .trim()
+      .split(/\s+/)
+      .filter((part) => part.length > 0);
+    this.#command = command ?? "sharednet";
+    this.#prefixArgs = prefixArgs;
     this.#defaultTimeout = options.timeoutMs ?? 30_000;
   }
 
@@ -52,7 +62,9 @@ export class SharedNetClient {
       let stdout = "";
       let stderr = "";
 
-      const child = spawn(this.#command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(this.#command, [...this.#prefixArgs, ...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
 
       const timer = setTimeout(() => {
         if (settled) return;
