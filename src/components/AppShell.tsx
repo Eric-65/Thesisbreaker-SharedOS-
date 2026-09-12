@@ -76,8 +76,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SystemStatusBadges compact />
             </div>
             <p className="mt-2 text-[10px] text-[#5e6472]">
-              Every action requires your explicit approval before Binance Agent OS
-              executes it.
+              Arena services execute through SharedOS under a deny-by-default
+              policy. Trading actions additionally require your explicit approval.
             </p>
           </div>
         </div>
@@ -155,8 +155,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="mt-6 rounded-lg border border-[#1e222c] bg-[#0b0d12] p-3">
                 <SystemStatusBadges compact />
                 <p className="mt-2 text-[10px] text-[#5e6472]">
-                  Actions require explicit approval before Binance Agent OS executes
-                  them.
+                  Arena services execute through SharedOS. Trading actions require
+                  your explicit approval.
                 </p>
               </div>
             </div>
