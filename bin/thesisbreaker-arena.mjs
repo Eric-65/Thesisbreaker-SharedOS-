@@ -1,3 +1,5 @@
 #!/usr/bin/env node
-import { main } from "../dist/arena/agent.js";
+// Environment must be loaded before the app module graph reads process.env.
+import "./load-env.mjs";
+const { main } = await import("../dist/arena/agent.js");
 await main();

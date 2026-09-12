@@ -11,13 +11,19 @@ The checklist to run before and during the SharedOS Arena. Work top to bottom.
 npm install
 
 # 2. Configure
+#    .env.local is a FILE in the project root, not commands to run. Copy the
+#    template and edit it. It is gitignored — never commit it.
 cp .env.example .env.local
 #    Fill in, at minimum:
+#      SHAREDNET_ROOM_ID        the rom_… from the Room invite
+#      SHAREDNET_NODE_ID        the i_… seat that `whoami` prints (step 3)
+#      SHAREDNET_CLI            npx -y sharednet@latest
 #      SHAREDOS_TENANT_ID
 #      SHAREDOS_OWNER_ADDRESS
 #      SHAREDOS_AGENT_ADDRESS
-#      SHAREDNET_NODE_ID
-#      SHAREDNET_ROOM_ID
+#
+#    The standalone entry points load .env.local themselves, so `npm run
+#    arena:agent` picks this up with no extra step.
 
 # 3. SharedNet credentials
 #    Join the Room with the one-time claim from its invite page. This must run
