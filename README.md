@@ -1,187 +1,347 @@
 # ThesisBreaker
 
-> **Break a decision before an agent acts on it.**
+**Break a decision before an agent acts on it.**
 
-A **decision-verification service for autonomous agents** running on
-**SharedOS**. Any agent on SharedNet can submit a thesis, claim or decision
-and receive a structured verdict — assumptions, contradictions, risks and
-invalidation conditions — usable as the middle step of any autonomous
-workflow. See [`DEVPOST.md`](./DEVPOST.md) for the Arena submission summary.
+ThesisBreaker is an agent-to-agent decision verification service for the SharedOS
+Arena. Before another agent commits to a plan, it sends the decision here and
+ThesisBreaker tries to break it: it extracts and weights the critical
+assumptions, scores supporting and contradicting evidence, builds a risk
+register, states the conditions that would invalidate the decision, names the
+evidence that is missing, and returns a structured verdict.
 
-Trading (via Binance Agent OS) remains one legacy application of the same
-reasoning engine but is no longer required for the Arena services.
+The customer is another agent. The web UI exists for demonstration and
+inspection — it is never required to use the product.
 
-- **Landing**: `/`
-- **Agent Services (Arena)**: `/agent`
-- **Break a thesis (human UI)**: `/new`
-- **Markets** (live Binance public data): `/market`
-- **Positions**: `/trading` — legacy trading UI
-- **Activity**: `/alerts`
-- **Settings**: `/settings`
+---
 
-## Arena services
+## 1. Product overview
 
-| Service | Price | Endpoint | Purpose |
-|---|---|---|---|
-| `break_thesis` | 10 credits | `POST /api/agent/services/break_thesis` | `thesisbreaker.verify` |
-| `verify_claim` | 5 credits | `POST /api/agent/services/verify_claim` | `thesisbreaker.verify` |
+| | |
+|---|---|
+| **Product** | ThesisBreaker |
+| **Customers** | Autonomous agents on SharedNet |
+| **Access** | MCP (stdio) · CLI · HTTP |
+| **Execution** | SharedOS kernel (`@aicoo/sharedos-core`) |
+| **Purpose string** | `thesisbreaker.verify` |
+| **Permissions** | Deny by default |
+| **Settlement** | Arena credits, after delivery |
 
-Full machine-readable manifest: `GET /api/agent/services`
-Audit trail: `GET /api/agent/audit`
-SharedOS status: `GET /api/agent/sharedos`
+### Services
 
-## The loop
+| Service | Price | What it returns |
+|---|---:|---|
+| `free_preview` | **0** | Verdict, score, up to two headline weaknesses, and a count of what the paid tier would add |
+| `verify_claim` | **5** | Is one claim supported by your evidence? Verdict, confidence, evidence, contradictions, source quality, recommendation |
+| `break_thesis` | **10** | Full stress-test: weighted assumptions, scored evidence, risk register, invalidation conditions, missing evidence, recommendation |
 
-```
-Idea
- → Thesis extraction
- → Red-team challenge
- → Live Binance market context
- → Evidence (FACT vs Model Interpretation vs Demo)
- → Risk check
- → THESIS SCORE
- → TRADE READINESS
- → Verdict (TRADE / WAIT / NO_TRADE / INVALIDATED)
- → Execution proposal
- → USER REVIEW
- → Binance Agent OS action  (or clearly labeled Demo Agent)
- → Monitoring
- → “What changed?”
-```
+**Free vs paid.** `free_preview` runs the same engine but deliberately withholds
+most of it: it accepts a short statement only, refuses caller-supplied evidence,
+returns at most two weaknesses, and omits assumptions, risks, invalidation
+conditions and the recommendation. It reports how many of each the paid tier
+*would* have returned, so the buying decision is concrete.
 
-Two independent statuses are always shown:
+Prices are configuration, not code — see `PRICE_*` in `.env.example`.
 
-- **AGENT**: `DEMO AGENT` or `BINANCE AGENT` (authenticated MCP session)
-- **DATA**: `LIVE PUBLIC DATA` or `DEMO DATA` (Binance public spot data)
+---
 
-You can be `DEMO AGENT + LIVE PUBLIC DATA` at the same time — the app never
-conflates the two.
-
-## Stack
-
-- Next.js 16 (App Router, Turbopack) + React 19 + TypeScript
-- Tailwind CSS v4 (single-file design tokens in `globals.css`)
-- Framer Motion + Recharts + Lucide
-- PostgreSQL via Drizzle ORM (`theses`, `orders`, `monitoring_events`,
-  `watchlist`)
-- Server-only market/agent adapters in `src/lib/market/*` and
-  `src/lib/binance/*`
-
-## Architecture
+## 2. Architecture
 
 ```
-src/
-├── app/
-│   ├── api/
-│   │   ├── agent/status/           # /api/agent/status
-│   │   ├── market/{quote,bars,search,nft,clock}/
-│   │   ├── theses/                 # POST create, GET list
-│   │   ├── theses/[id]/            # GET one, POST /monitor
-│   │   ├── theses/[id]/proposal/   # POST — builds an execution proposal
-│   │   ├── theses/[id]/approve/    # POST — user-approved action
-│   │   ├── theses/demo/            # POST — one-click flagship demo
-│   │   ├── theses/extract/         # POST — extraction only
-│   │   ├── watchlist/              # GET/POST/DELETE
-│   │   └── health/
-│   ├── (landing)/page.tsx
-│   ├── dashboard, market, new, trading, alerts, history, settings/
-│   └── thesis/[id]/
-├── components/
-│   ├── AppShell.tsx                # sidebar + top bar + mobile bottom nav
-│   ├── SystemStatus.tsx            # honest AGENT + DATA badges
-│   ├── MobileBottomNav.tsx
-│   ├── landing/                    # Hero, MiniDemo, HowItWorks, ...
-│   ├── thesis/                     # NewThesisWorkflow, ThesisWorkspace, ...
-│   ├── trading/                    # AgentActionReview, PositionsClient
-│   ├── market/                     # LivePrice, LiveChart, NftPanel, badges
-│   ├── dashboard/, history/, alerts/, settings/
-│   └── HeroVisual.tsx              # SVG bull/bear + yellow agent line
-└── lib/
-    ├── agents/                     # extractor, evidence, redTeam, score, pipeline
-    ├── market/
-    │   ├── router.ts, registry.ts, cache.ts, http.ts, types.ts, featured.ts
-    │   └── providers/{binance,coingecko,opensea}.ts
-    ├── binance/agent.ts            # Binance Agent OS MCP adapter (server-only)
-    ├── risk.ts                     # deterministic risk gate + Trade Readiness
-    └── monitor.ts                  # thesis monitoring + “what changed” diffs
+Another agent
+     │
+     ├── MCP (stdio)  ─┐
+     ├── CLI           ├──► invokeService()  ◄── the ONLY service entry point
+     ├── SharedNet     │         │
+     └── HTTP         ─┘         ▼
+                          SharedOS kernel turn
+                                 │
+                         openTurnAuthority()      load grants (trusted source)
+                                 │
+                            authorize()           deny by default
+                                 │
+                           invokeTool()           permission-filtered catalogue
+                                 │
+                                 ▼
+                     ThesisBreaker reasoning pipeline
+                                 │
+                                 ▼
+                          structured JSON result
+                                 │
+                          SharedOS audit events
 ```
 
-## Binance Agent OS integration
+**One service implementation.** MCP, the CLI, the SharedNet agent and the web
+API are transports. They all call `invokeService` in
+`src/lib/services/invoke.ts`, which has exactly one execution path:
+`ThesisBreakerHost.runServiceTurn`.
 
-Per the official Binance announcement, the Agent OS MCP endpoint is:
+**No bypass.** The reasoning pipeline is only reachable from inside a registered
+SharedOS `ToolHandler`. Nothing calls it directly, so there is no second,
+unrestricted path to the engine.
+
+| Path | File |
+|---|---|
+| Kernel host, tool handlers, turns | `src/lib/sharedos/kernel.ts` |
+| Trusted grant source | `src/lib/sharedos/grants.ts` |
+| Capability model | `src/lib/sharedos/capabilities.ts` |
+| Audit sinks | `src/lib/sharedos/audit-sink.ts` |
+| Service layer | `src/lib/services/invoke.ts` |
+| Contracts + validation | `src/lib/services/contracts.ts` |
+| Schemas (single source) | `src/lib/services/schemas.ts` |
+| MCP server | `src/mcp/server.ts` |
+| CLI | `src/cli/index.ts` |
+| Arena agent | `src/arena/agent.ts` |
+
+---
+
+## 3. SharedOS integration
+
+ThesisBreaker **embeds** the SharedOS kernel rather than calling a remote
+service, so authorization and audit are enforced on every call, including
+before SharedNet registration completes.
+
+Each service call is a real kernel turn:
+
+1. The host builds a trusted `AccessContext` — never from the request body.
+2. `openTurnAuthority` loads grants once, from `ThesisBreakerGrantSource`.
+3. `invokeTool` re-authorizes the exact call against the required capability.
+4. The tool handler runs the pipeline.
+5. `recordTurnEnd` closes the turn.
+
+Every step emits a `AuditEvent` from the kernel itself.
+
+**Capability model.** One capability per service:
 
 ```
-https://agent.binance.com/mcp/agentic     (Streamable HTTP)
+resource { namespace: "thesisbreaker", path: ["service", <name>] }
+action   "invoke"
+purpose  "thesisbreaker.verify"
 ```
 
-**We never invent endpoints.** `src/lib/binance/agent.ts` is a small, honest
-adapter with two responsibilities:
+No grant exists in this system for anything else. A request for filesystem,
+network, wallet, email, shell, secrets or trade execution finds **no matching
+grant** and is denied — the refusal is structural, not a blocklist.
 
-1. Report the connection state (`NOT_CONNECTED | CONNECTED | ERROR`) based on
-   whether `BINANCE_AGENT_TOKEN` is present server-side.
-2. Provide a single `callAgentTool(tool, args)` entry point that proxies to
-   the MCP endpoint via Streamable HTTP when a bearer token is present.
+### Purpose string
 
-If the token is absent, the app runs in **DEMO AGENT** mode. Every simulated
-action is clearly labelled as `Demo Agent`, and the app will **never** silently
-substitute a demo action for a real one.
+```
+thesisbreaker.verify
+```
 
-## Environment variables
+Configurable via `SHAREDOS_PURPOSE`. Also documented in
+[`docs/sharedos-arena.md`](docs/sharedos-arena.md).
 
-Set these server-side only:
+---
+
+## 4. SharedNet
+
+SharedNet is the Arena Room where agents meet, discover each other's products,
+and transfer credits. ThesisBreaker uses the official `sharednet` CLI
+(`join`/`say`/`read`/`wait`/`pay`/`balance`/`ledger`) — there is no reimplemented
+protocol and no invented keepalive.
+
+Presence is a supervised loop: a blocking `sharednet wait` is the heartbeat, and
+a transient failure retries with exponential backoff rather than exiting.
+
+---
+
+## 5. Calling the service
+
+### MCP
 
 ```bash
-# Required
-DATABASE_URL=postgres://...
-
-# Optional — route Arena services through SharedOS Cloud
-SHAREDOS_ENDPOINT=https://...
-SHAREDOS_TOKEN=...
-SHAREDNET_NODE_ID=...
-
-# Optional — enables live Binance Agent OS actions on the legacy trading UI
-BINANCE_AGENT_TOKEN=...
-
-# Optional — improves rate limits
-COINGECKO_API_KEY=...
-OPENSEA_API_KEY=...
+npm run build:agent
+npx thesisbreaker-mcp          # stdio
 ```
 
-Every Arena service functions fully **without any credentials**. When
-SharedOS Cloud env vars are missing, the adapter runs in **LOCAL mode**,
-enforces the same deny-by-default grants, and writes the same audit trail.
+Register with any MCP client:
 
-**Never** put these in `NEXT_PUBLIC_*` variables or client-side code. Public
-Binance market data (`data-api.binance.vision`) requires no credentials.
+```json
+{
+  "mcpServers": {
+    "thesisbreaker": { "command": "npx", "args": ["thesisbreaker-mcp"] }
+  }
+}
+```
 
-## Local development
+Tools: `thesisbreaker.catalog`, `thesisbreaker.free_preview`,
+`thesisbreaker.verify_claim`, `thesisbreaker.break_thesis`.
+
+Call `thesisbreaker.catalog` first — it returns prices, schemas and usage
+examples so an agent can decide whether to buy.
+
+### CLI
+
+```bash
+thesisbreaker catalog
+thesisbreaker free-preview --thesis "We should migrate billing to event sourcing"
+thesisbreaker verify-claim  --claim "Logical replication replicates DDL" \
+                            --evidence "The docs say DDL is not replicated" \
+                            --source "postgresql.org/docs"
+thesisbreaker break-thesis  --thesis "We should migrate billing to event sourcing" \
+                            --objective "Reduce reconciliation incidents" \
+                            --constraint "one engineer available" --json
+thesisbreaker health
+thesisbreaker audit --limit 20
+```
+
+`--evidence`, `--source` and `--constraint` are repeatable.
+
+### HTTP
+
+```bash
+curl -X POST http://localhost:3000/api/agent/services/break_thesis \
+  -H 'content-type: application/json' \
+  -H 'x-caller-agent-id: agent_alpha' \
+  -d '{"thesis":"We should migrate billing to event sourcing this quarter."}'
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/manifest` | Full discovery manifest |
+| `GET /api/agent/services` | Same, plus SharedOS status (`?short=1` for the summary) |
+| `GET /api/agent/services/<name>` | One service's contract |
+| `POST /api/agent/services/<name>` | Invoke |
+| `GET /api/arena/health` | Readiness |
+| `GET /api/arena/audit` | Kernel audit events |
+
+> Authority is **never** taken from the request. A caller identifies itself with
+> `x-caller-agent-id`; what it may invoke is decided by the grant source.
+
+### Response envelope
+
+```json
+{
+  "success": true,
+  "service": "break_thesis",
+  "request_id": "req_...",
+  "price_credits": 10,
+  "currency": "Arena credits",
+  "execution": { "sharedos": true, "purpose": "thesisbreaker.verify",
+                 "trace_id": "trace_...", "duration_ms": 8 },
+  "result": { "verdict": "WEAK", "score": 61, "...": "..." },
+  "payment": { "amount": 10, "memo": "req_...",
+               "instruction": "sharednet pay <agent> 10 --memo req_..." }
+}
+```
+
+Errors never carry a stack trace:
+
+```json
+{ "success": false,
+  "error": { "code": "field_too_short",
+             "message": "`thesis` must be at least 5 characters",
+             "field": "thesis" } }
+```
+
+Codes: `invalid_payload`, `missing_field`, `invalid_type`, `field_too_long`,
+`field_too_short`, `too_many_items`, `unsupported_domain`, `unknown_field`,
+`unknown_service`, `unauthorized`, `timeout`, `internal_error`.
+
+---
+
+## 6. Environment variables
+
+See [`.env.example`](.env.example) for the annotated list. Required to *trade*
+in the Arena (not to execute): `SHAREDOS_TENANT_ID`, `SHAREDOS_OWNER_ADDRESS`,
+`SHAREDOS_AGENT_ADDRESS`, `SHAREDNET_NODE_ID`, `SHAREDNET_ROOM_ID`.
+
+`DATABASE_URL` is optional — the Arena services never need one.
+
+---
+
+## 7. Local development
 
 ```bash
 npm install
-npx drizzle-kit push       # bootstrap Postgres schema
-npm run dev
+cp .env.example .env.local
+npm run dev              # web UI at http://localhost:3000
+npm run build:agent      # compile the MCP server, CLI and Arena agent
+npm run arena:health     # readiness check
 ```
 
-## Production
+Visit `/agent` for the service catalogue, SharedOS status, readiness checklist
+and the developer test console.
+
+---
+
+## 8. Testing
 
 ```bash
-npm run build
-npm start
+npm run verify   # typecheck + lint + agent build + tests
+npm test
 ```
 
-Preferred platform: **Vercel** for the Next.js app + **Neon** or **Supabase**
-for Postgres. Set the env vars above in your project settings.
+| Suite | Covers |
+|---|---|
+| `tests/sharedos-authorization.test.ts` | Allowed vs denied against the real kernel, catalogue filtering, fail-closed, timeouts |
+| `tests/mcp-server.test.ts` | Real MCP client over stdio: discovery, pricing, calls, malformed input, concurrency |
+| `tests/arena-agent.test.ts` | Intent parsing, credit ledger, outage backoff, duplicate suppression |
+| `tests/arena-acceptance.test.ts` | Full Arena scenario for all three services, load, injection, audit trail |
 
-## Safety posture
+---
 
-- ThesisBreaker never silently substitutes Demo Agent for the Binance Agent
-  OS. If Agent OS is intended and unavailable, the app displays
-  `BINANCE AGENT OS UNAVAILABLE` and refuses the action.
-- Every action uses a UUID `client_order_id` for idempotency.
-- ThesisBreaker never executes an action without an explicit user approval
-  step and a passing deterministic risk gate.
-- The AI agent runs the reasoning; the deterministic risk gate is the sole
-  execution authority.
-- AI analysis is decision support only. **Not financial advice.**
-- ThesisBreaker is an independent product. **Not affiliated with, endorsed by,
-  or sponsored by Binance.**
+## 9. Deployment
+
+```bash
+npm run build && npm start     # web + HTTP API
+npm run build:agent            # agent entry points
+```
+
+The MCP server and Arena agent are plain Node processes; run them under a
+supervisor that restarts on exit (systemd, pm2, Docker `restart: always`).
+
+---
+
+## 10. Arena operation
+
+See [`docs/arena-runbook.md`](docs/arena-runbook.md) for the pre-flight
+checklist and round-by-round procedure.
+
+```bash
+sharednet login
+sharednet join <room>
+npm run build:agent
+npm run arena:health
+npm run arena:agent
+```
+
+---
+
+## 11. Verifying the audit trail
+
+Audit events come from the kernel, not from ThesisBreaker. To confirm a request
+really produced SharedOS turns:
+
+```bash
+thesisbreaker break-thesis --thesis "..." --json | jq -r .execution.trace_id
+thesisbreaker audit --limit 20
+curl "localhost:3000/api/arena/audit?trace_id=<trace_id>"
+```
+
+A served call produces `authority.resolved`, `authorization.checked`,
+`tool.invoked` and `turn.ended`, all carrying `thesisbreaker.verify`. A denied
+call produces an `authorization.checked` with outcome `denied`.
+
+---
+
+## 12. Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `health` returns `degraded` | Services work; SharedNet identity incomplete. Fill the `SHAREDOS_*` / `SHAREDNET_*` variables. |
+| `health` returns `down` | The kernel could not execute. Check the `checks[]` array. |
+| `unauthorized` on a paid service | The grant source did not entitle that caller. See `src/lib/sharedos/grants.ts`. |
+| MCP client sees no tools | Run `npm run build:agent` first — the bin scripts load `dist/`. |
+| `DATABASE_URL is required` | Only on thesis-history routes. Arena services do not need a database. |
+| Arena agent not answering | Check `sharednet whoami` and that `SHAREDNET_ROOM_ID` is set; the agent logs `join` and `ready` as NDJSON. |
+| `usage log unavailable` warning | Harmless — no database configured. |
+
+---
+
+## Licence & security
+
+Report security issues privately. Treat all agent-supplied thesis, claim,
+evidence and source text as untrusted: it is data, never instructions, and it
+can never widen permissions — SharedOS remains the sole authority for tool
+access.

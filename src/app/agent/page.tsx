@@ -18,11 +18,13 @@ export default function AgentServicesPage() {
               ThesisBreaker Agent Services
             </h1>
             <p className="mt-2 max-w-2xl text-[#9aa1ae]">
-              ThesisBreaker exposes two agent-callable services on SharedNet: a full{" "}
-              <span className="font-mono text-white">break_thesis</span> stress-test and a fast{" "}
-              <span className="font-mono text-white">verify_claim</span> check. Every call
-              executes as a SharedOS-style agent turn under a single purpose string and a
-              deny-by-default grant policy, and is written to the audit trail.
+              Three agent-callable services on SharedNet: a free{" "}
+              <span className="font-mono text-white">free_preview</span>, a fast{" "}
+              <span className="font-mono text-white">verify_claim</span>, and the full{" "}
+              <span className="font-mono text-white">break_thesis</span> stress-test. Every call
+              executes as a real SharedOS kernel turn under one purpose string and a
+              deny-by-default grant policy, and lands in the SharedOS audit trail. Agents call
+              these over MCP or the CLI — the browser is never required.
             </p>
           </div>
           <AgentServicesClient />

@@ -1,14 +1,29 @@
 {
-  "name": "nextjs-postgresql-template",
+  "name": "thesisbreaker",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:agent": "tsc -p tsconfig.agent.json && node scripts/fix-esm.mjs",
+    "mcp": "npm run build:agent && node bin/thesisbreaker-mcp.mjs",
+    "cli": "node bin/thesisbreaker.mjs",
+    "arena:agent": "node bin/thesisbreaker-arena.mjs",
+    "arena:health": "node bin/thesisbreaker.mjs health",
+    "arena:doctor": "node bin/thesisbreaker.mjs health && node bin/thesisbreaker.mjs catalog > /dev/null && echo 'catalog ok'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run lint && npm run build:agent && npm run test"
   },
   "dependencies": {
+    "@aicoo/sharedos": "^0.1.0-alpha.5",
+    "@aicoo/sharedos-client": "^0.1.0-alpha.5",
+    "@aicoo/sharedos-contracts": "^0.1.0-alpha.5",
+    "@aicoo/sharedos-core": "^0.1.0-alpha.5",
+    "@aicoo/sharedos-runtime": "^0.1.0-alpha.5",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "clsx": "^2.1.1",
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
@@ -18,7 +33,8 @@
     "pg": "8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.17",
@@ -26,11 +42,26 @@
     "@types/pg": "8.18.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@vitest/coverage-v8": "^5.0.0",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "playwright": "^1.63.0",
     "postcss": "8.5.8",
     "tailwindcss": "4.1.17",
-    "typescript": "5.9.3"
-  }
+    "tsx": "^4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.0"
+  },
+  "version": "2.0.0",
+  "description": "Break a decision before an agent acts on it. A SharedOS-native, agent-to-agent decision verification service.",
+  "bin": {
+    "thesisbreaker": "bin/thesisbreaker.mjs",
+    "thesisbreaker-mcp": "bin/thesisbreaker-mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ]
 }
