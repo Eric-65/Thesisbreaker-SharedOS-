@@ -53,8 +53,57 @@ function log(event: string, detail: Record<string, unknown> = {}): void {
  * fall back to a permissive line parse so an output-format change degrades to
  * "treat the line as text" rather than taking the agent down.
  */
-export function parseMessages(stdout: string): ParsedMessage[] {
+export function parseMessages(stdout: string, ownSeat?: string): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
+
+  const push = (id: string, from: string, text: string) => {
+    // Never answer our own posts. The pitch contains a JSON usage example, so
+    // reading it back would otherwise look like a customer request and invoice
+    // a phantom counterparty.
+    if (ownSeat && from === ownSeat) return;
+    messages.push({ id, from, text });
+  };
+
+  const readItem = (raw: unknown): boolean => {
+    if (!raw || typeof raw !== "object") return false;
+    const item = raw as Record<string, unknown>;
+    const sender = (item.sender ?? {}) as Record<string, unknown>;
+    const content = item.content ?? item.text ?? item.body;
+    if (typeof content !== "string") return false;
+    const from =
+      (typeof sender.member_id === "string" && sender.member_id) ||
+      (typeof item.sender_instance_id === "string" && item.sender_instance_id) ||
+      (typeof sender.name === "string" && sender.name) ||
+      (typeof item.from === "string" && item.from) ||
+      "unknown";
+    push(String(item.id ?? item.sequence ?? messages.length), from, content);
+    return true;
+  };
+
+  // 'sharednet read' prints ONE JSON page: { items: [ { sequence, sender: {
+  // member_id, name }, sender_instance_id, content, ... } ] }. Parse the whole
+  // payload first - a pretty-printed object is not parseable line by line.
+  const whole = stdout.trim();
+  if (whole.startsWith("{") || whole.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(whole);
+      const page = parsed as { items?: unknown; message?: unknown };
+      const items = Array.isArray(page.items)
+        ? page.items
+        : page.message
+          ? [page.message]
+          : Array.isArray(parsed)
+            ? parsed
+            : [];
+      if (items.length > 0) {
+        for (const item of items) readItem(item);
+        return messages;
+      }
+      if (readItem(parsed)) return messages;
+    } catch {
+      // Not a single JSON document - fall through to the line reader.
+    }
+  }
 
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
@@ -62,27 +111,18 @@ export function parseMessages(stdout: string): ParsedMessage[] {
 
     if (trimmed.startsWith("{")) {
       try {
-        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-        const text = parsed.text ?? parsed.message ?? parsed.body;
-        if (typeof text === "string") {
-          messages.push({
-            id: String(parsed.id ?? parsed.message_id ?? `${messages.length}`),
-            from: String(parsed.from ?? parsed.sender ?? parsed.instance ?? "unknown"),
-            text,
-          });
-          continue;
-        }
+        if (readItem(JSON.parse(trimmed))) continue;
       } catch {
         // Fall through to the text handling below.
       }
     }
 
-    // "i_abc123: some text" or plain prose.
-    const prefixed = trimmed.match(/^([A-Za-z0-9_:.-]{2,64})\s*[:>]\s*(.+)$/);
+    // "#12 i_abc: text", "i_abc: text", or plain prose.
+    const prefixed = trimmed.match(/^#?\d*\s*([A-Za-z0-9_:.-]{2,64})\s*[:>]\s*(.+)$/);
     if (prefixed) {
-      messages.push({ id: `${messages.length}`, from: prefixed[1], text: prefixed[2] });
+      push(String(messages.length), prefixed[1], prefixed[2]);
     } else {
-      messages.push({ id: `${messages.length}`, from: "unknown", text: trimmed });
+      push(String(messages.length), "unknown", trimmed);
     }
   }
 
@@ -283,7 +323,7 @@ export class ArenaAgent {
       throw new Error(`sharednet read failed: ${read.stderr.trim().slice(0, 200)}`);
     }
 
-    const messages = parseMessages(read.stdout);
+    const messages = parseMessages(read.stdout, IDENTITY.sharednetNodeId ?? undefined);
     let handled = 0;
 
     for (const message of messages) {

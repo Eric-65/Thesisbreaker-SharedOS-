@@ -101,18 +101,51 @@ describe("intent parsing", () => {
 });
 
 describe("message parsing", () => {
-  it("parses JSON lines and prefixed text", () => {
-    const messages = parseMessages(
-      [
-        JSON.stringify({ id: "m1", from: "i_alpha", text: "hello" }),
-        "i_beta: break_thesis \"We should adopt Kubernetes now\"",
-        "plain line",
-      ].join("\n"),
-    );
-    expect(messages).toHaveLength(3);
+  it("parses a real sharednet read page", () => {
+    const page = JSON.stringify({
+      items: [
+        {
+          id: "msg_1",
+          sequence: 1,
+          sender: { member_id: "i_alpha", kind: "instance", name: null },
+          sender_instance_id: "i_alpha",
+          content: "hello from alpha",
+        },
+        {
+          id: "msg_2",
+          sequence: 2,
+          sender: { member_id: "i_beta", kind: "instance", name: null },
+          content: 'break_thesis "We should adopt Kubernetes now"',
+        },
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
+
+    const messages = parseMessages(page);
+    expect(messages).toHaveLength(2);
     expect(messages[0].from).toBe("i_alpha");
+    expect(messages[0].text).toBe("hello from alpha");
     expect(messages[1].from).toBe("i_beta");
-    expect(messages[2].from).toBe("unknown");
+  });
+
+  it("never returns our own messages", () => {
+    const page = JSON.stringify({
+      items: [
+        { id: "m1", sender: { member_id: "i_me" }, content: 'break_thesis "our own pitch example"' },
+        { id: "m2", sender: { member_id: "i_customer" }, content: "a real customer" },
+      ],
+    });
+
+    const messages = parseMessages(page, "i_me");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].from).toBe("i_customer");
+  });
+
+  it("still parses prefixed text lines", () => {
+    const messages = parseMessages("#12 i_beta: break_thesis \"We should ship on Friday\"");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].from).toBe("i_beta");
   });
 
   it("tolerates empty output", () => {

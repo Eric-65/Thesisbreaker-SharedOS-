@@ -34,14 +34,18 @@ export interface SharedNetOptions {
    */
   command?: string;
   timeoutMs?: number;
+  /** Seat to act as (`--as i_…`). Required when the directory holds several. */
+  seat?: string | null;
 }
 
 const DEFAULT_COMMAND = process.env.SHAREDNET_CLI ?? "sharednet";
+const DEFAULT_SEAT = (process.env.SHAREDNET_NODE_ID ?? "").trim() || null;
 
 export class SharedNetClient {
   readonly #command: string;
   readonly #prefixArgs: readonly string[];
   readonly #defaultTimeout: number;
+  readonly #seat: string | null;
 
   constructor(options: SharedNetOptions = {}) {
     const [command, ...prefixArgs] = (options.command ?? DEFAULT_COMMAND)
@@ -51,6 +55,16 @@ export class SharedNetClient {
     this.#command = command ?? "sharednet";
     this.#prefixArgs = prefixArgs;
     this.#defaultTimeout = options.timeoutMs ?? 30_000;
+    this.#seat = options.seat !== undefined ? options.seat : DEFAULT_SEAT;
+  }
+
+  /** Adds `--as <seat>` for the verbs that accept it, when a seat is configured. */
+  #withSeat(args: string[]): string[] {
+    if (!this.#seat) return args;
+    const verb = args[0];
+    if (!["say", "read", "wait", "watch", "balance", "pay", "upload"].includes(verb)) return args;
+    if (args.includes("--as")) return args;
+    return [...args, "--as", this.#seat];
   }
 
   /** Runs one sharednet subcommand. Never throws — always returns a result. */
@@ -62,7 +76,7 @@ export class SharedNetClient {
       let stdout = "";
       let stderr = "";
 
-      const child = spawn(this.#command, [...this.#prefixArgs, ...args], {
+      const child = spawn(this.#command, [...this.#prefixArgs, ...this.#withSeat(args)], {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
