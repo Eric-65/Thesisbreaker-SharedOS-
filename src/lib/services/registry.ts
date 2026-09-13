@@ -64,7 +64,7 @@ export function manifest(options: ManifestOptions = {}) {
     access: {
       mcp: {
         transport: "stdio",
-        command: "npx thesisbreaker-mcp",
+        command: "npx -p thesisbreaker thesisbreaker-mcp",
         tools: SERVICE_LIST.map((s) => `thesisbreaker.${s.name}`),
       },
       cli: {

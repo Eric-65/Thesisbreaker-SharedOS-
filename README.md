@@ -150,8 +150,8 @@ a transient failure retries with exponential backoff rather than exiting.
 ### MCP
 
 ```bash
-npm run build:agent
-npx thesisbreaker-mcp          # stdio
+# From npm (no clone needed):
+npx -p thesisbreaker thesisbreaker-mcp   # stdio, straight from npm
 ```
 
 Register with any MCP client:
@@ -159,7 +159,7 @@ Register with any MCP client:
 ```json
 {
   "mcpServers": {
-    "thesisbreaker": { "command": "npx", "args": ["thesisbreaker-mcp"] }
+    "thesisbreaker": { "command": "npx", "args": ["-y", "-p", "thesisbreaker", "thesisbreaker-mcp"] }
   }
 }
 ```
